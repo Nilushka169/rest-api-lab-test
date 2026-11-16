@@ -29,6 +29,11 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: mvn verify sonar:sonar -Dsonar.projectKey=ousl-student-service || true
 
+      - name: Verify JAR File
+        run: |
+          echo "Checking generated JAR files..."
+          ls -lh target/*.jar
+
       - name: Build Container
         run: docker build -t lab-test-api:${{ github.sha }} .
 
