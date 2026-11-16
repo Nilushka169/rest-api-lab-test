@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: LabTest   # Routes all run steps into your subfolder
+        working-directory: ousl-project   # Routes all run steps into your subfolder
 
     steps:
       - name: Checkout Code
