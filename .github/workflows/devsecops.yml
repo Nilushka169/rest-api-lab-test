@@ -3,7 +3,12 @@ name: AWS DevSecOps Pipeline
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build-and-secure:
@@ -109,16 +114,32 @@ jobs:
           EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
+          DB_PASS: ${{ secrets.DB_PASS }}
 
         run: |
+
+          set -e
 
           echo "=================================="
           echo "Starting AWS EC2 Deployment"
           echo "=================================="
 
-          # Prepare deployment script
+          # Validate required variables
+          if [ -z "$DB_PASS" ]; then
+            echo "ERROR: DB_PASS GitHub Secret is missing!"
+            exit 1
+          fi
 
-          REMOTE_SCRIPT=$(cat <<EOF
+          if [ -z "$EC2_INSTANCE_ID" ]; then
+            echo "ERROR: EC2_INSTANCE_ID is missing!"
+            exit 1
+          fi
+
+          # --------------------------------
+          # Prepare Remote Deployment Script
+          # --------------------------------
+
+          REMOTE_SCRIPT=$(cat <<'EOF'
           set -e
 
           echo "Starting Docker service..."
@@ -127,60 +148,135 @@ jobs:
           echo "Logging into Amazon ECR..."
 
           aws ecr get-login-password \
-            --region "${AWS_REGION}" | \
+            --region "__AWS_REGION__" | \
             docker login \
             --username AWS \
-            --password-stdin "${ECR_REGISTRY}"
+            --password-stdin "__ECR_REGISTRY__"
 
           echo "Pulling Docker image..."
 
-          docker pull "${ECR_REGISTRY}/lab-test-api:${IMAGE_TAG}"
+          docker pull "__ECR_REGISTRY__/lab-test-api:__IMAGE_TAG__"
+
+          # --------------------------------
+          # Ensure Docker Network Exists
+          # --------------------------------
+
+          echo "Checking Docker network..."
+
+          if ! docker network inspect book-network >/dev/null 2>&1; then
+              echo "Creating book-network..."
+              docker network create book-network
+          else
+              echo "book-network already exists."
+          fi
+
+          # --------------------------------
+          # Stop Existing Application
+          # --------------------------------
 
           echo "Stopping old application container..."
 
           docker stop lab-test-api || true
           docker rm lab-test-api || true
 
+          # --------------------------------
+          # Check Port 8080
+          # --------------------------------
+
           echo "Checking containers using port 8080..."
 
-          CONTAINER_IDS=\$(docker ps -q --filter "publish=8080")
+          CONTAINER_IDS=$(docker ps -q --filter "publish=8080")
 
-          if [ -n "\$CONTAINER_IDS" ]; then
+          if [ -n "$CONTAINER_IDS" ]; then
               echo "Stopping containers occupying port 8080..."
-              docker stop \$CONTAINER_IDS
-              docker rm \$CONTAINER_IDS
+              docker stop $CONTAINER_IDS
+              docker rm $CONTAINER_IDS
           fi
+
+          # --------------------------------
+          # Deploy New Application Container
+          # --------------------------------
 
           echo "Starting new application container..."
 
           docker run -d \
             --name lab-test-api \
+            --network book-network \
             --restart unless-stopped \
             -p 8080:8080 \
-            "${ECR_REGISTRY}/lab-test-api:${IMAGE_TAG}"
+            -e DB_HOST=book-postgres \
+            -e DB_USER=postgres \
+            -e DB_PASS='__DB_PASS__' \
+            "__ECR_REGISTRY__/lab-test-api:__IMAGE_TAG__"
 
-          echo "Checking deployment..."
+          # --------------------------------
+          # Verify Deployment
+          # --------------------------------
 
-          sleep 5
+          echo "Waiting for application startup..."
 
-          docker ps
+          sleep 10
+
+          if [ "$(docker inspect -f '{{.State.Running}}' lab-test-api)" != "true" ]; then
+              echo "ERROR: Application container is not running!"
+              docker logs --tail 50 lab-test-api
+              exit 1
+          fi
 
           echo "Checking application logs..."
 
           docker logs --tail 30 lab-test-api
 
+          echo "Checking Docker network..."
+
+          docker network inspect book-network
+
+          echo "=================================="
           echo "Deployment completed successfully!"
+          echo "=================================="
 
           EOF
           )
 
-          # Convert deployment script to JSON
+          # --------------------------------
+          # Inject Deployment Variables Safely
+          # --------------------------------
+
+          export REMOTE_SCRIPT
+
+          REMOTE_SCRIPT=$(python3 - <<'PY'
+          import os
+
+          script = os.environ["REMOTE_SCRIPT"]
+
+          replacements = {
+              "__AWS_REGION__": os.environ["AWS_REGION"],
+              "__ECR_REGISTRY__": os.environ["ECR_REGISTRY"],
+              "__IMAGE_TAG__": os.environ["IMAGE_TAG"],
+              "__DB_PASS__": os.environ["DB_PASS"],
+          }
+
+          for key, value in replacements.items():
+              if any(c in value for c in ("\n", "\r", "\x00")):
+                  raise SystemExit("Invalid deployment variable")
+
+              script = script.replace(key, value.replace("'", "'\\''"))
+
+          print(script)
+          PY
+          )
+
+          # --------------------------------
+          # Convert Deployment Script to JSON
+          # --------------------------------
 
           PARAMS=$(jq -n \
             --arg cmd "$REMOTE_SCRIPT" \
             '{commands: [$cmd]}')
 
-          # Send command through AWS SSM
+          # --------------------------------
+          # Send Command Through AWS SSM
+          # --------------------------------
 
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "$EC2_INSTANCE_ID" \
@@ -195,7 +291,9 @@ jobs:
 
           echo "Waiting for EC2 deployment..."
 
-          # Wait for deployment completion
+          # --------------------------------
+          # Wait for Deployment Completion
+          # --------------------------------
 
           for i in $(seq 1 60); do
 
