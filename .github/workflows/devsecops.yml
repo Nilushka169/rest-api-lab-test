@@ -30,12 +30,12 @@ jobs:
         run: mvn verify sonar:sonar -Dsonar.projectKey=ousl-student-service || true
 
       - name: Build Container
-        run: docker build -t ousl-student-api:${{ github.sha }} .
+        run: docker build -t lab-test-api:${{ github.sha }} .
 
       - name: Aqua Security Trivy Scan
         uses: aquasecurity/trivy-action@v0.35.0
         with:
-          image-ref: 'ousl-student-api:${{ github.sha }}'
+          image-ref: 'lab-test-api:${{ github.sha }}'
           format: 'table'
           exit-code: '0'
           severity: 'CRITICAL'
@@ -55,5 +55,5 @@ jobs:
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
-          docker tag ousl-student-api:${{ github.sha }} $ECR_REGISTRY/ousl-student-api:${{ github.sha }}
-          docker push $ECR_REGISTRY/ousl-student-api:${{ github.sha }}
+          docker tag lab-test-api:${{ github.sha }} $ECR_REGISTRY/lab-test-api:${{ github.sha }}
+          docker push $ECR_REGISTRY/lab-test-api:${{ github.sha }}
