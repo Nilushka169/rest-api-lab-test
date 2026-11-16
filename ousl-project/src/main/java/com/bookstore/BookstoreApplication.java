@@ -15,9 +15,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import java.math.BigDecimal;
 import java.util.List;
 
-// ========================================================
 // 1. MAIN APPLICATION & WEB CONFIGURATION
-// ========================================================
 @SpringBootApplication
 public class BookstoreApplication implements WebMvcConfigurer {
 
@@ -33,9 +31,7 @@ public class BookstoreApplication implements WebMvcConfigurer {
     }
 }
 
-// ========================================================
 // 2. ENTITY MODEL (BOOK)
-// ========================================================
 @Entity
 @Table(name = "books")
 class Book {
@@ -131,17 +127,13 @@ class Book {
     }
 }
 
-// ========================================================
 // 3. REPOSITORY INTERFACE
-// ========================================================
 @Repository
 interface BookRepository extends JpaRepository<Book, Long> {
     List<Book> findAllByOrderByIdDesc();
 }
 
-// ========================================================
 // 4. SERVICE (CRUD BUSINESS LOGIC)
-// ========================================================
 @Service
 class BookService {
 
@@ -183,9 +175,7 @@ class BookService {
     }
 }
 
-// ========================================================
 // 5. REST CONTROLLER (CRUD ENDPOINTS)
-// ========================================================
 @RestController
 @RequestMapping("/api/books")
 @CrossOrigin(origins = "*")
