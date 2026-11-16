@@ -11,7 +11,6 @@ const app = {
   init() {
     this.bookModal = new bootstrap.Modal(document.getElementById('bookModal'));
     this.loadBooks();
-    this.checkHealth();
   },
 
   // Toast notifications
@@ -31,18 +30,6 @@ const app = {
     const toast = new bootstrap.Toast(toastEl, { delay: 3500 });
     toast.show();
     toastEl.addEventListener('hidden.bs.toast', () => toastEl.remove());
-  },
-
-  // Health check
-  async checkHealth() {
-    try {
-      const res = await fetch('/actuator/health');
-      if (res.ok) {
-        document.getElementById('health-text').textContent = 'Online';
-      }
-    } catch (e) {
-      document.getElementById('health-text').textContent = 'Offline';
-    }
   },
 
   // 1. READ ALL
